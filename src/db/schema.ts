@@ -9,6 +9,8 @@ export const user = pgTable("user", {
     .notNull(),
   image: text("image"),
   points: integer("points").notNull().default(0),
+  onboarded: boolean("onboarded")
+    .$defaultFn(() => false),
   createdAt: timestamp("created_at")
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),

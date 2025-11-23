@@ -36,9 +36,24 @@ export const DashboardUserButton = () => {
   const router = useRouter();
   const { data: session } = authClient.useSession();
 
-  const onLogout = () => {
-    console.log("Logged out");
-    router.push("/sign-in");
+  const onLogout = async () => {
+    try {
+      await authClient.signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            router.push('/sign-in');
+          },
+          onError: () => {
+            // Even if signOut fails, redirect to sign-in
+            router.push('/sign-in');
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Fallback redirect
+      router.push('/sign-in');
+    }
   };
 
   /* -----------------------------------------

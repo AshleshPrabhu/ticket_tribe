@@ -23,4 +23,13 @@ export const auth = betterAuth({
       ...schema,
     },
   }),
+  user: {
+    additionalFields: {
+      onboarded: {
+        type: "boolean",
+        defaultValue: false,
+        input: false, 
+      },
+    },
+  },
 });

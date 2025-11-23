@@ -34,7 +34,7 @@ const PRIMARY = [
   { icon: ShieldCheck, label: "Predict", href: "/predict" },
   { icon: Users, label: "My Tribe", href: "/tribe" },
   { icon: Trophy, label: "Leaderboard", href: "/leaderboard" },
-  { icon: Settings, label: "Settings", href: "/settings" },
+  // { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
 export const DashboardSidebar = () => {

@@ -43,9 +43,25 @@ export const SignInView = () => {
             callbackURL: "/"
         },
             {
-                onSuccess: () => {
+                onSuccess: async () => {
                     setPending(false);
-                    router.push("/");
+                    
+                    // Check if user needs onboarding
+                    try {
+                        const response = await fetch('/api/user/onboard-status');
+                        if (response.ok) {
+                            const { onboarded } = await response.json();
+                            if (!onboarded) {
+                                router.push('/onboarding');
+                            } else {
+                                router.push('/');
+                            }
+                        } else {
+                            router.push('/');
+                        }
+                    } catch (error) {
+                        router.push('/');
+                    }
                 },
 
                 onError: ({ error }) => {
@@ -63,8 +79,25 @@ export const SignInView = () => {
             callbackURL: "/"
         },
             {
-                onSuccess: () => {
+                onSuccess: async () => {
                     setPending(false);
+                    
+                    // Check if user needs onboarding
+                    try {
+                        const response = await fetch('/api/user/onboard-status');
+                        if (response.ok) {
+                            const { onboarded } = await response.json();
+                            if (!onboarded) {
+                                router.push('/onboarding');
+                            } else {
+                                router.push('/');
+                            }
+                        } else {
+                            router.push('/');
+                        }
+                    } catch (error) {
+                        router.push('/');
+                    }
                 },
 
                 onError: ({ error }) => {
