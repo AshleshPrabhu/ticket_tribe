@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['@neondatabase/serverless'],
   },
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./node_modules/**/*'],
+  },
   async redirects() {
     return [
       {
