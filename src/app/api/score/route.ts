@@ -10,7 +10,8 @@ export async function POST(_request: Request) {
 
     try {
         // Get current stock prices from our stock API
-        const stockResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/stock`);
+        const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+        const stockResponse = await fetch(`${baseUrl}/api/stock`);
         
         if (!stockResponse.ok) {
             throw new Error('Failed to fetch current stock prices');
