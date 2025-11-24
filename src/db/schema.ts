@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, serial, bigint } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -94,6 +94,9 @@ export const prediction = pgTable("prediction", {
   AAPL: boolean("aapl"),
   MSFT: boolean("msft"),
   GOOGL: boolean("googl"),
+  AAPLPrice: bigint("aapl_price", { mode: "number" }),
+  MSFTPrice: bigint("msft_price", { mode: "number" }),
+  GOOGLPrice: bigint("googl_price", { mode: "number" }),
 
   userId: text("user_id")
     .notNull()

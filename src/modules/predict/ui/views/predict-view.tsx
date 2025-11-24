@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowUp, ArrowDown, Clock, RefreshCw, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fetchStockPrices } from "@/lib/stocks";
+
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 
@@ -22,12 +22,9 @@ type PredictionType = "UP" | "DOWN" | null;
 export default function PredictView() {
   const { data: session } = authClient.useSession();
   
-  const [stocks, setStocks] = useState<Ticker[]>([
-    { symbol: "AAPL", name: "Apple Inc.", price: 183.42 },
-    { symbol: "MSFT", name: "Microsoft Corp.", price: 378.85 },
-    { symbol: "GOOGL", name: "Alphabet Inc.", price: 136.12 },
-  ]);
+  const [stocks, setStocks] = useState<Ticker[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [locked, setLocked] = useState(false);
@@ -40,38 +37,95 @@ export default function PredictView() {
     GOOGL: null,
   });
 
+  // Fetch initial data on mount
   useEffect(() => {
-    const fetchUserPredictions = async () => {
-      try {
-        const response = await fetch('/api/user/predict');
-        if (response.ok) {
-          const data = await response.json();
-          const formattedPredictions: Record<string, PredictionType> = {};
-          
-          setLocked(data.locked || false);
-          
-          Object.entries(data).forEach(([symbol, prediction]) => {
-            if (symbol !== 'locked') {
-              formattedPredictions[symbol] = prediction ? "UP" : "DOWN";
-            }
-          });
-          
-          setPredictions(formattedPredictions);
-        }
-      } catch (error) {
-        console.error('Error fetching user predictions:', error);
-      }
+    const fetchInitialData = async () => {
+      setIsLoading(true);
+      await Promise.all([
+        fetchUserPredictions(),
+        refreshPrices(),
+      ]);
+      setIsLoading(false);
     };
 
-    fetchUserPredictions();
+    fetchInitialData();
   }, []);
+
+  const fetchUserPredictions = async () => {
+    try {
+      const response = await fetch('/api/user/predict');
+      if (response.ok) {
+        const data = await response.json();
+        const formattedPredictions: Record<string, PredictionType> = {};
+        
+        setLocked(data.locked || false);
+        
+        Object.entries(data).forEach(([symbol, prediction]) => {
+          if (symbol !== 'locked') {
+            formattedPredictions[symbol] = prediction === null ? null : prediction ? "UP" : "DOWN";
+          }
+        });
+        
+        setPredictions(formattedPredictions);
+      }
+    } catch (error) {
+      console.error('Error fetching user predictions:', error);
+    }
+  };
   const refreshPrices = async () => {
     setIsRefreshing(true);
     try {
-      const freshStocks = await fetchStockPrices();
-      setStocks(freshStocks);
+      const response = await fetch('/api/stock');
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Data",data);
+        if (data.success && data.data) {
+          const stocksArray: Ticker[] = [
+            {
+              symbol: 'AAPL',
+              name: 'Apple Inc.',
+              price: data.data.AAPL || 0 // Keep full precision for accurate comparisons
+            },
+            {
+              symbol: 'MSFT', 
+              name: 'Microsoft Corp.',
+              price: data.data.MSFT || 0 // Keep full precision for accurate comparisons
+            },
+            {
+              symbol: 'GOOGL',
+              name: 'Alphabet Inc.',
+              price: data.data.GOOGL || 0 // Keep full precision for accurate comparisons
+            }
+          ];
+          
+          setStocks(stocksArray);
+          
+          // Show success message if all prices loaded
+          if (data.meta.successful === 3) {
+            toast.success('Stock prices updated successfully!');
+          } else if (data.meta.successful > 0) {
+            toast.warning(`Updated ${data.meta.successful}/3 stock prices`);
+          } else {
+            toast.error('Failed to fetch stock prices');
+          }
+        } else {
+          throw new Error('Invalid API response format');
+        }
+      } else {
+        throw new Error(`API request failed: ${response.status}`);
+      }
     } catch (error) {
       console.error('Error fetching stock prices:', error);
+      toast.error('Failed to refresh stock prices. Please try again.');
+      
+      // Fallback to prevent empty state
+      if (stocks.length === 0) {
+        setStocks([
+          { symbol: 'AAPL', name: 'Apple Inc.', price: 0 },
+          { symbol: 'MSFT', name: 'Microsoft Corp.', price: 0 },
+          { symbol: 'GOOGL', name: 'Alphabet Inc.', price: 0 }
+        ]);
+      }
     } finally {
       setIsRefreshing(false);
     }
@@ -99,24 +153,42 @@ export default function PredictView() {
         return;
       }
 
+      // Allow partial predictions - users can skip stocks
       const predictionValues = Object.values(predictions);
-      const allPredictionsMade = predictionValues.every(prediction => prediction !== null);
+      const hasSomePredictions = predictionValues.some(prediction => prediction !== null);
       
-      console.log('Predictions:', predictions);
-      console.log('Prediction values:', predictionValues);
-      console.log('All predictions made:', allPredictionsMade);
-      
-      if (!allPredictionsMade) {
-        toast.error('Please make predictions for all 3 stocks before saving');
+      if (!hasSomePredictions) {
+        toast.error('Please make at least one prediction before saving');
         setIsSaving(false);
         return;
       }
+
+      // Get current stock prices
+      const aaplStock = stocks.find(s => s.symbol === 'AAPL');
+      const msftStock = stocks.find(s => s.symbol === 'MSFT');
+      const googlStock = stocks.find(s => s.symbol === 'GOOGL');
+
+      // Check if required stock prices are loaded for predicted stocks
+      if ((predictions.AAPL !== null && !aaplStock) ||
+          (predictions.MSFT !== null && !msftStock) ||
+          (predictions.GOOGL !== null && !googlStock)) {
+        toast.error('Stock prices not loaded for predicted stocks. Please refresh and try again.');
+        setIsSaving(false);
+        return;
+      }
+
       const predictionsToSave = {
         userId: session.user.id,
         AAPL: predictions.AAPL === "UP" ? true : predictions.AAPL === "DOWN" ? false : null,
         MSFT: predictions.MSFT === "UP" ? true : predictions.MSFT === "DOWN" ? false : null,
         GOOGL: predictions.GOOGL === "UP" ? true : predictions.GOOGL === "DOWN" ? false : null,
+        // Only include prices for stocks that have predictions
+        ...(predictions.AAPL !== null && aaplStock && { AAPLPrice: aaplStock.price }),
+        ...(predictions.MSFT !== null && msftStock && { MSFTPrice: msftStock.price }),
+        ...(predictions.GOOGL !== null && googlStock && { GOOGLPrice: googlStock.price }),
       };
+
+      console.log('Saving predictions with prices:', predictionsToSave);
 
       const response = await fetch('/api/predict', {
         method: 'POST',
@@ -127,11 +199,19 @@ export default function PredictView() {
       });
 
       if (response.ok) {
+        const data = await response.json();
         setHasChanges(false);
-        toast.success('Predictions saved successfully!');
+        
+        const predictedStocks = [];
+        if (predictions.AAPL !== null && aaplStock) predictedStocks.push(`AAPL $${aaplStock.price}`);
+        if (predictions.MSFT !== null && msftStock) predictedStocks.push(`MSFT $${msftStock.price}`);
+        if (predictions.GOOGL !== null && googlStock) predictedStocks.push(`GOOGL $${googlStock.price}`);
+        
+        toast.success(`Predictions saved for: ${predictedStocks.join(', ')}`);
       } else {
-        console.error('Failed to save predictions');
-        toast.error('Failed to save predictions. Please try again.');
+        const errorData = await response.json();
+        console.error('Failed to save predictions:', errorData);
+        toast.error(errorData.error || 'Failed to save predictions. Please try again.');
       }
     } catch (error) {
       console.error('Error saving predictions:', error);
@@ -140,6 +220,20 @@ export default function PredictView() {
       setIsSaving(false);
     }
   };
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="p-4 md:p-6">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading stock prices...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6">

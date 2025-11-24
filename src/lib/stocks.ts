@@ -20,7 +20,7 @@ export async function fetchStockResults() {
 export async function fetchStockPrices() {
     const symbols = ["AAPL", "MSFT", "GOOGL"];
     const stockData = [];
-
+    
     for (const symbol of symbols) {
         try {
             // Generate realistic mock prices with small random variations
