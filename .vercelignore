@@ -1,0 +1,3 @@
+# Ignore files that might cause build issues
+**/*_client-reference-manifest.js
+.next/server/app/**/*_client-reference-manifest.js
