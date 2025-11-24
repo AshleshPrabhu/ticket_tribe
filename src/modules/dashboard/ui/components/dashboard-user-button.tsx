@@ -36,9 +36,24 @@ export const DashboardUserButton = () => {
   const router = useRouter();
   const { data: session } = authClient.useSession();
 
-  const onLogout = () => {
-    console.log("Logged out");
-    router.push("/sign-in");
+  const onLogout = async () => {
+    try {
+      await authClient.signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            router.push('/sign-in');
+          },
+          onError: () => {
+            // Even if signOut fails, redirect to sign-in
+            router.push('/sign-in');
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Fallback redirect
+      router.push('/sign-in');
+    }
   };
 
   /* -----------------------------------------
@@ -82,14 +97,6 @@ export const DashboardUserButton = () => {
           </DrawerHeader>
 
           <div className="px-4">
-            <Button
-              variant="outline"
-              className="w-full flex items-center justify-between"
-              onClick={() => console.log("Billing clicked")}
-            >
-              Billing
-              <CreditCardIcon className="size-4 text-black" />
-            </Button>
 
             <Button
               className="w-full mt-3 flex items-center justify-between"
@@ -133,14 +140,6 @@ export const DashboardUserButton = () => {
         </div>
 
         <DropdownMenuSeparator />
-
-        <DropdownMenuItem
-          className="cursor-pointer flex items-center justify-between"
-          onClick={() => console.log("Billing clicked")}
-        >
-          Billing
-          <CreditCardIcon className="size-4" />
-        </DropdownMenuItem>
 
         <DropdownMenuItem
           className="cursor-pointer flex items-center justify-between"

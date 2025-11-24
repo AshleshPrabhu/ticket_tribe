@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 
-type Member = { id: number; name: string; score: number; color?: string };
+type Member = { id: number; name: string; points: number; color?: string };
 
 export default function LeaderboardPage() {
   const [members, setMembers] = useState<Member[]>([]);
@@ -24,8 +24,8 @@ export default function LeaderboardPage() {
     try {
       const res = await fetch("/api/leaderboard");
       const json = await res.json();
-      const list: Member[] = json.members || [];
-      list.sort((a, b) => b.score - a.score);
+      const list: Member[] = json.leaderboard || [];
+      // API already returns sorted by points desc, no need to sort again
       setMembers(list);
     } catch (e) {
       console.error("fetch members failed", e);
@@ -37,27 +37,8 @@ export default function LeaderboardPage() {
   useEffect(() => {
     fetchMembers();
 
-    if (typeof window !== "undefined" && "EventSource" in window) {
-      const es = new EventSource("/api/leaderboard/stream");
-      evtRef.current = es;
-      es.onopen = () => setConnected(true);
-      es.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data);
-          if (data && data.members) {
-            data.members.sort((a: Member, b: Member) => b.score - a.score);
-            setMembers(data.members);
-            setLastUpdated(new Date().toLocaleString());
-          }
-        } catch (e) {}
-      };
-      es.onerror = (err) => {
-        setConnected(false);
-      };
-      return () => {
-        es.close();
-      };
-    }
+    // EventSource streaming not implemented yet
+    // Remove this section for now
   }, []);
 
   const filtered = members.filter((m) =>
@@ -67,8 +48,8 @@ export default function LeaderboardPage() {
   const TOP3 = members.slice(0, 3);
 
   function exportCSV() {
-    const rows = [["Rank", "Name", "Score"]].concat(
-      members.map((m, i) => [String(i + 1), m.name, String(m.score)])
+    const rows = [["Rank", "Name", "Points"]].concat(
+      members.map((m, i) => [String(i + 1), m.name, String(m.points)])
     );
     const csv = rows
       .map((r) =>
@@ -123,16 +104,6 @@ export default function LeaderboardPage() {
             >
               Refresh
             </button>
-            <div className="flex items-center gap-2 text-sm">
-              <span
-                className={`w-3 h-3 rounded-full ${
-                  connected ? "bg-emerald-500" : "bg-gray-300"
-                }`}
-              />
-              <span className="text-xs text-neutral-500">
-                {connected ? "Live" : "Offline"}
-              </span>
-            </div>
           </div>
         </div>
 
@@ -151,7 +122,7 @@ export default function LeaderboardPage() {
               <div>#</div>
               <div>Profile</div>
               <div>Name</div>
-              <div className="text-right">Score</div>
+              <div className="text-right">Points</div>
             </div>
 
             {/* Rows */}
@@ -200,7 +171,7 @@ export default function LeaderboardPage() {
                     </div>
 
                     <div className="text-right font-semibold text-neutral-900">
-                      {m.score}
+                      {m.points}
                     </div>
                   </div>
                 ))}
@@ -233,7 +204,7 @@ export default function LeaderboardPage() {
         <p className="mt-2 text-sm font-medium text-neutral-800 text-center w-28 truncate">
           {TOP3[1]?.name ?? "—"}
         </p>
-        <p className="text-xs text-neutral-500">{TOP3[1]?.score ?? "--"} pts</p>
+        <p className="text-xs text-neutral-500">{TOP3[1]?.points ?? "--"} pts</p>
       </div>
 
       {/* 1st place (center spotlight) */}
@@ -260,7 +231,7 @@ export default function LeaderboardPage() {
           {TOP3[0]?.name ?? "—"}
         </p>
         <p className="text-sm text-neutral-700 font-medium">
-          {TOP3[0]?.score ?? "--"} pts
+          {TOP3[0]?.points ?? "--"} pts
         </p>
       </div>
 
@@ -279,7 +250,7 @@ export default function LeaderboardPage() {
         <p className="mt-2 text-sm font-medium text-neutral-800 text-center w-24 truncate">
           {TOP3[2]?.name ?? "—"}
         </p>
-        <p className="text-xs text-neutral-500">{TOP3[2]?.score ?? "--"} pts</p>
+        <p className="text-xs text-neutral-500">{TOP3[2]?.points ?? "--"} pts</p>
       </div>
     </div>
   </div>
@@ -313,7 +284,7 @@ export default function LeaderboardPage() {
           </div>
 
           <div className="text-[11px] text-neutral-500">
-            {TOP3[i]?.score ?? "--"} pts
+            {TOP3[i]?.points ?? "--"} pts
           </div>
         </div>
       ))}

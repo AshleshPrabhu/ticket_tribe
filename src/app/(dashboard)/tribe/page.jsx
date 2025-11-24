@@ -1,24 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-
-/* ------------------------------------------
-   Sample data (replace with real backend)
------------------------------------------- */
-const SAMPLE_MEMBERS = [
-  { id: 1, name: "Arjun Rao", role: "Admin", online: true, color: "#7c3aed" },
-  { id: 2, name: "Maya K", role: "Member", online: true, color: "#0ea5a4" },
-  { id: 3, name: "Rahul Sharma", role: "Member", online: false, color: "#fb923c" },
-  { id: 4, name: "Noah Lee", role: "Member", online: true, color: "#ef4444" },
-  { id: 5, name: "Asha Patel", role: "Member", online: true, color: "#06b6d4" },
-];
-
-const SAMPLE_MESSAGES = [
-  { id: "m1", authorId: 1, author: "Arjun Rao", text: "Welcome to TickerTribe — good luck today!", time: "09:02", date: "2025-11-21" },
-  { id: "m2", authorId: 2, author: "Maya K", text: "Anyone leaning NVDA?", time: "09:05", date: "2025-11-21" },
-  { id: "m3", authorId: 1, author: "Arjun Rao", text: "I'm picking HIGHER on NVDA.", time: "09:07", date: "2025-11-21" },
-  { id: "m4", authorId: 4, author: "Noah Lee", text: "GL everyone!", time: "09:12", date: "2025-11-21" },
-];
+import React, { useEffect, useState } from "react";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
 
 /* ------------------------------------------
    Utils
@@ -30,45 +14,22 @@ function initials(name) {
     .join("");
 }
 
-function groupBy(list, keyFn) {
-  const out = {};
-  list.forEach((item) => {
-    const k = keyFn(item);
-    if (!out[k]) out[k] = [];
-    out[k].push(item);
-  });
-  return out;
-}
-
-function formatDate(dateISO) {
-  const today = new Date().toISOString().slice(0, 10);
-  if (dateISO === today) return "Today";
-  const d = new Date(dateISO);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function shade(hex, percent) {
-  try {
-    const f = parseInt(hex.slice(1), 16);
-    const t = percent < 0 ? 0 : 255;
-    const p = Math.abs(percent) / 100;
-    const R = Math.round((t - (f >> 16)) * p) + (f >> 16);
-    const G = Math.round((t - ((f >> 8) & 0xff)) * p) + ((f >> 8) & 0xff);
-    const B = Math.round((t - (f & 0xff)) * p) + (f & 0xff);
-    return `rgb(${R}, ${G}, ${B})`;
-  } catch {
-    return hex;
-  }
-}
-
 function Avatar({ name, color, size = 32 }) {
+  const colors = [
+    "#7c3aed", "#0ea5a4", "#fb923c", "#ef4444", "#06b6d4",
+    "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"
+  ];
+  
+  const colorIndex = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const selectedColor = color || colors[colorIndex % colors.length];
+  
   return (
     <div
       className="flex items-center justify-center rounded-full text-white font-semibold"
       style={{
         width: size,
         height: size,
-        background: `linear-gradient(135deg, ${color}, ${shade(color, -15)})`,
+        backgroundColor: selectedColor,
       }}
     >
       {initials(name)}
@@ -76,74 +37,106 @@ function Avatar({ name, color, size = 32 }) {
   );
 }
 
+function PredictionBadge({ prediction, stock }) {
+  // Only show predictions if they exist and are locked
+  if (!prediction || !prediction.locked) {
+    return <span className="text-xs text-gray-400">Not predicted</span>;
+  }
+  
+  // Use uppercase stock symbol to match database structure
+  const stockPrediction = prediction[stock.toUpperCase()];
+  
+  if (stockPrediction === null || stockPrediction === undefined) {
+    return <span className="text-xs text-gray-400">Not predicted</span>;
+  }
+  
+  const isHigher = stockPrediction === true;
+  return (
+    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+      isHigher 
+        ? 'bg-green-100 text-green-700' 
+        : 'bg-red-100 text-red-700'
+    }`}>
+      {isHigher ? '📈 Higher' : '📉 Lower'}
+    </span>
+  );
+}
+
 /* ------------------------------------------
-   Main Component
+    Main Component
 ------------------------------------------ */
-export default function TribeChatPage() {
-  const [members, setMembers] = useState(SAMPLE_MEMBERS);
-  const [messages, setMessages] = useState(SAMPLE_MESSAGES);
-  const [typingUsers, setTypingUsers] = useState([]);
-  const [connected, setConnected] = useState(false);
-  const [text, setText] = useState("");
+export default function TribePage() {
+  const [tribeData, setTribeData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [attachedFiles, setAttachedFiles] = useState([]);
-  const [showMembers, setShowMembers] = useState(false);
 
-  const msgRef = useRef(null);
-  const inputRef = useRef(null);
-  const fileRef = useRef(null);
+  const stocks = ['AAPL', 'MSFT', 'GOOGL'];
 
-  const grouped = groupBy(messages, (m) => m.date);
-
-  /* Smooth auto-scroll */
   useEffect(() => {
-    const el = msgRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [messages]);
-
-  /* Fake typing indicator (demo) */
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setTypingUsers([{ id: 2, name: "Maya K" }]);
-      setTimeout(() => setTypingUsers([]), 1800);
-    }, 1500);
-    return () => clearTimeout(t);
+    fetchTribeData();
   }, []);
 
-  /* Send message */
-  function sendMsg() {
-    if (!text.trim() && attachedFiles.length === 0) return;
+  const fetchTribeData = async () => {
+    try {
+      setLoading(true);
+      
+      const response = await fetch('/api/tribe', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    setMessages((m) => [
-      ...m,
-      {
-        id: "m" + Date.now(),
-        author: "You",
-        authorId: 0,
-        text: text.trim(),
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        date: new Date().toISOString().slice(0, 10),
-        files: attachedFiles,
-      },
-    ]);
+      if (response.ok) {
+        const data = await response.json();
+        setTribeData(data);
+      } else if (response.status === 404) {
+        toast.error("You are not in any tribe. Please join a tribe first.");
+      } else if (response.status === 401) {
+        toast.error("Authentication failed. Please sign in again.");
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || "Failed to fetch tribe data");
+      }
+    } catch (error) {
+      console.error('Error fetching tribe data:', error);
+      toast.error("Failed to load tribe data");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    setText("");
-    setAttachedFiles([]);
+  const filteredMembers = tribeData?.members?.filter((m) =>
+    m.name?.toLowerCase().includes(query.toLowerCase())
+  ) || [];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your tribe...</p>
+        </div>
+      </div>
+    );
   }
 
-  /* Attach */
-  function attach(e) {
-    const files = Array.from(e.target.files || []).map((f) => ({
-      name: f.name,
-      size: f.size,
-    }));
-    setAttachedFiles((p) => [...p, ...files]);
-    e.target.value = "";
+  if (!tribeData) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">No Tribe Found</h2>
+          <p className="text-gray-600 mb-4">You are not in any tribe yet.</p>
+          <button 
+            onClick={() => window.location.href = '/onboarding'}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            Join a Tribe
+          </button>
+        </div>
+      </div>
+    );
   }
-
-  const filteredMembers = members.filter((m) =>
-    m.name.toLowerCase().includes(query.toLowerCase())
-  );
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -151,247 +144,134 @@ export default function TribeChatPage() {
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Mobile drawer icon */}
-            <button
-              onClick={() => setShowMembers(true)}
-              className="lg:hidden w-10 h-10 rounded-md bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center"
-            >
-              <svg width="18" height="12" viewBox="0 0 18 12" fill="none">
-                <rect width="18" height="2" rx="1" fill="#444" />
-                <rect y="5" width="18" height="2" rx="1" fill="#444" />
-                <rect y="10" width="18" height="2" rx="1" fill="#444" />
-              </svg>
-            </button>
-
             <div>
-              <div className="font-semibold text-neutral-900 text-[15px]">Tribe Chat</div>
-              <div className="text-xs text-neutral-500">Real-time · Private tribe chat</div>
+              <div className="font-semibold text-neutral-900 text-[15px]">
+                Tribe Predictions
+              </div>
+              <div className="text-xs text-neutral-500">
+                Code: {tribeData.tribe.code} • {filteredMembers.length} members
+              </div>
             </div>
           </div>
 
-          {/* search */}
           <input
-            placeholder="Find member…"
+            placeholder="Search members…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="hidden sm:block border px-3 py-2 rounded-md text-sm bg-white"
+            className="hidden sm:block border px-3 py-2 rounded-md text-sm bg-white w-64"
           />
         </div>
       </div>
 
-      {/* MAIN LAYOUT */}
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_330px] gap-6">
-          {/* CHAT */}
-          <main className="bg-white border rounded-xl shadow-sm flex flex-col">
-
-            {/* messages */}
-            <div
-              ref={msgRef}
-              className="flex-1 overflow-y-auto p-3 md:p-4 space-y-5"
-            >
-              {Object.keys(grouped).map((date) => (
-                <div key={date} className="space-y-4">
-                  <div className="flex justify-center">
-                    <span className="text-[11px] px-3 py-1 rounded-full bg-neutral-100 text-neutral-500">
-                      {formatDate(date)}
-                    </span>
-                  </div>
-
-                  {grouped[date].map((m, idx) => {
-                    const isMe = m.author === "You";
-                    const prev = grouped[date][idx - 1];
-                    const showAuthor = !prev || prev.author !== m.author;
-
-                    return (
-                      <div key={m.id} className={`flex ${isMe ? "justify-end" : ""}`}>
-                        <div className="max-w-[70%] text-[13px] leading-snug">
-                          <div className={`flex gap-2 ${isMe ? "flex-row-reverse" : ""}`}>
-                            
-                            {!isMe && showAuthor && (
-                              <Avatar
-                                name={m.author}
-                                color={getColor(m.authorId, members)}
-                                size={32}
-                              />
-                            )}
-
-                            <div>
-                              {!isMe && showAuthor && (
-                                <div className="text-[11px] text-neutral-500 mb-0.5">
-                                  {m.author}
-                                </div>
-                              )}
-
-                              <div
-                                className={`${isMe
-                                  ? "bg-blue-600 text-white"
-                                  : "bg-neutral-100 text-neutral-900"
-                                } px-3 py-2 rounded-xl shadow-sm whitespace-pre-wrap`}
-                              >
-                                {m.text}
-
-                                {m.files && m.files.length > 0 && (
-                                  <div className="mt-2 space-y-1">
-                                    {m.files.map((f, i) => (
-                                      <div
-                                        key={i}
-                                        className="text-[11px] bg-white px-2 py-1 border rounded-md"
-                                      >
-                                        {f.name}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="mt-1 text-[10px] text-neutral-400">
-                                {m.time}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-
-              {/* typing indicator */}
-              {typingUsers.length > 0 && (
-                <div className="flex items-center gap-2 text-[12px] text-neutral-500">
-                  <div className="w-6 h-6 rounded-full bg-neutral-200 flex items-center justify-center">
-                    …
-                  </div>
-                  {typingUsers.map((t) => t.name).join(", ")} typing…
-                </div>
-              )}
+      {/* MAIN CONTENT */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        {/* PREDICTIONS GRID */}
+        <div className="bg-white border rounded-xl shadow-sm">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-gray-900">Member Predictions</h2>
+              <button
+                onClick={fetchTribeData}
+                className="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+              >
+                Refresh
+              </button>
             </div>
 
-            {/* attachments preview */}
-            {attachedFiles.length > 0 && (
-              <div className="border-t bg-neutral-50 px-3 py-2 flex gap-2 overflow-x-auto">
-                {attachedFiles.map((f, i) => (
-                  <div key={i} className="border bg-white shadow-sm rounded-md px-3 py-2 text-[11px]">
-                    {f.name}
+            {/* Mobile search */}
+            <input
+              placeholder="Search members…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="sm:hidden w-full border px-3 py-2 rounded-md text-sm bg-white mb-4"
+            />
+
+            {filteredMembers.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">No members found</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Header */}
+                <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 pb-3 border-b border-gray-200">
+                  <div className="font-medium text-sm text-gray-700">Member</div>
+                  <div className="grid grid-cols-3 gap-4">
+                    {stocks.map(stock => (
+                      <div key={stock} className="text-center">
+                        <div className="font-medium text-sm text-gray-700">{stock}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Member rows */}
+                {filteredMembers.map((member) => (
+                  <div 
+                    key={member.userId} 
+                    className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 py-4 border-b border-gray-100 last:border-b-0"
+                  >
+                    {/* Member info */}
+                    <div className="flex items-center gap-3">
+                      <Avatar name={member.name || 'Unknown'} size={40} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">
+                          {member.name || 'Unknown User'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {member.points || 0} points
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Predictions */}
+                    <div className="grid grid-cols-3 gap-4">
+                      {stocks.map(stock => (
+                        <div key={stock} className="text-center">
+                          <PredictionBadge 
+                            prediction={member.prediction} 
+                            stock={stock}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* composer */}
-            <div className="border-t p-3 bg-white">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  className="w-10 h-10 rounded-md bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center"
-                >
-                  📎
-                </button>
+            
+          </div>
+        </div>
 
-                <input
-                  ref={fileRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={attach}
-                />
-
-                <textarea
-                  ref={inputRef}
-                  rows={1}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      sendMsg();
-                    }
-                  }}
-                  placeholder="Message your tribe…"
-                  className="flex-1 min-h-[40px] max-h-32 border rounded-md px-3 py-2 text-sm bg-neutral-50 resize-none"
-                />
-
-                <button
-                  onClick={sendMsg}
-                  className={`px-4 py-2 rounded-md text-sm ${
-                    text.trim() || attachedFiles.length
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-200 text-neutral-500"
-                  }`}
-                >
-                  Send
-                </button>
-              </div>
+        {/* TRIBE INFO SIDEBAR */}
+        <div className="mt-6 bg-white border rounded-xl shadow-sm p-6">
+          <h3 className="font-semibold text-gray-900 mb-4">Tribe Information</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">Tribe Code:</span>
+              <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
+                {tribeData.tribe.code}
+              </span>
             </div>
-          </main>
-
-          {/* MEMBERS PANEL */}
-          <aside
-            className={`bg-white border rounded-xl shadow-sm p-4 transition-transform duration-200 lg:static lg:translate-x-0
-            fixed top-0 right-0 h-full w-full z-50 ${
-              showMembers ? "translate-x-0" : "translate-x-full"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="font-semibold text-[14px] text-neutral-900">
-                  Active Members
-                </div>
-                <div className="text-xs text-neutral-500">
-                  {members.filter((m) => m.online).length} online
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowMembers(false)}
-                className="lg:hidden px-3 py-1 rounded-md bg-neutral-100 hover:bg-neutral-200 text-sm"
-              >
-                Close
-              </button>
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">Members:</span>
+              <span className="text-sm font-medium">{tribeData.members.length}</span>
             </div>
-
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search members"
-              className="w-full border rounded-md px-3 py-2 text-sm bg-white mb-4"
-            />
-
-            <div className="space-y-3 overflow-y-auto max-h-[65vh]">
-              {filteredMembers.map((m) => (
-                <div key={m.id} className="flex items-center gap-3">
-                  <Avatar name={m.name} color={m.color} size={38} />
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium truncate">{m.name}</div>
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          m.online ? "bg-emerald-500" : "bg-gray-300"
-                        }`}
-                      />
-                    </div>
-                    <div className="text-[11px] text-neutral-500">
-                      {m.role}
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">Created:</span>
+              <span className="text-sm">
+                {new Date(tribeData.tribe.createdAt).toLocaleDateString()}
+              </span>
             </div>
-
-            <div className="text-[11px] text-neutral-500 mt-4 border-t pt-2">
-              Tribe chat • TickerTribe © 2025
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">Active Predictions:</span>
+              <span className="text-sm font-medium">
+                {tribeData.members.filter(m => m.prediction && m.prediction.locked).length}
+              </span>
             </div>
-          </aside>
+          </div>
         </div>
       </div>
     </div>
   );
-}
-
-/* helper */
-function getColor(id, members) {
-  const m = members.find((x) => x.id === id);
-  return m?.color || "#6b7280";
 }

@@ -49,9 +49,10 @@ export const SignUpView = () => {
             callbackURL: "/"
         },
             {
-                onSuccess: () => {
+                onSuccess: async () => {
                     setPending(false);
-                    router.push("/");
+                    // New users need onboarding
+                    router.push("/onboarding");
                 },
 
                 onError: ({ error }) => {
@@ -69,8 +70,10 @@ export const SignUpView = () => {
             callbackURL: "/"
         },
             {
-                onSuccess: () => {
+                onSuccess: async () => {
                     setPending(false);
+                    // New users need onboarding
+                    router.push("/onboarding");
                 },
 
                 onError: ({ error }) => {

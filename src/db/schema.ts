@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, serial, bigint } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -8,6 +8,9 @@ export const user = pgTable("user", {
     .$defaultFn(() => false)
     .notNull(),
   image: text("image"),
+  points: integer("points").notNull().default(0),
+  onboarded: boolean("onboarded")
+    .$defaultFn(() => false),
   createdAt: timestamp("created_at")
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),
@@ -58,4 +61,54 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updated_at").$defaultFn(
     () => /* @__PURE__ */ new Date()
   ),
+});
+
+export const tribe = pgTable("tribe", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  createdAt: timestamp("created_at")
+    .$defaultFn(() => new Date())
+    .notNull(),
+  updatedAt: timestamp("updated_at")
+    .$defaultFn(() => new Date())
+    .notNull(),
+});
+
+export const tribeMembers = pgTable("tribe_members", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  tribeId: integer("tribe_id")
+    .notNull()
+    .references(() => tribe.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at")
+    .$defaultFn(() => new Date())
+    .notNull(),
+});
+
+
+export const prediction = pgTable("prediction", {
+  id: serial("id").primaryKey(),
+
+  AAPL: boolean("aapl"),
+  MSFT: boolean("msft"),
+  GOOGL: boolean("googl"),
+  AAPLPrice: bigint("aapl_price", { mode: "number" }),
+  MSFTPrice: bigint("msft_price", { mode: "number" }),
+  GOOGLPrice: bigint("googl_price", { mode: "number" }),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+
+  date: timestamp("date").notNull(),
+  locked: boolean("locked").notNull().default(false),
+  correct: boolean("correct").notNull().default(false),
+  createdAt: timestamp("created_at")
+    .$defaultFn(() => new Date())
+    .notNull(),
+  updatedAt: timestamp("updated_at")
+    .$defaultFn(() => new Date())
+    .notNull(),
 });

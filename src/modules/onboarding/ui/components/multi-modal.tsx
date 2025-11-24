@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { MultiStepModal, MultiStepModalContent } from "@/components/ui/multi-step-modal";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
 import confettiLib from "canvas-confetti";
 
 /* CONFETTI ABOVE EVERYTHING */
@@ -35,6 +37,7 @@ function runConfetti() {
 
 export default function OnboardingModal() {
   const isMobile = useIsMobile();
+  const { data: session } = authClient.useSession();
 
   const [referrer, setReferrer] = useState<string[]>([]);
   const [code, setCode] = useState("");
@@ -44,31 +47,100 @@ export default function OnboardingModal() {
 
   const [shareOpen, setShareOpen] = useState(false); // MOBILE ONLY
 
-  const handleCreateTribe = () => {
-    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setCreatedCode(newCode);
+  const handleCreateTribe = async () => {
+    try {
+      if (!session?.user?.id) {
+        toast.error('Please log in first');
+        return;
+      }
 
-    if (isMobile) {
-      setShareOpen(true);
+      const response = await fetch('/api/tribe/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: session.user.id }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCreatedCode(data.code);
+        
+        if (isMobile) {
+          setShareOpen(true);
+        }
+      } else {
+        toast.error('Failed to create tribe');
+      }
+    } catch (error) {
+      console.error('Error creating tribe:', error);
+      toast.error('An error occurred while creating tribe');
     }
   };
 
-  const handleJoinTribe = () => {
+  const handleJoinTribe = async () => {
     if (code.length !== 6) return;
 
     setJoining(true);
 
-    setTimeout(() => {
+    try {
+      if (!session?.user?.id) {
+        toast.error('Please log in first');
+        setJoining(false);
+        return;
+      }
+
+      const response = await fetch('/api/tribe/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: session.user.id, code }),
+      });
+
+      if (response.ok) {
+        setJoining(false);
+        setJoined(true);
+        runConfetti();
+        setTimeout(() => (window.location.href = "/predict"), 900);
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || 'Failed to join tribe');
+        setJoining(false);
+      }
+    } catch (error) {
+      console.error('Error joining tribe:', error);
+      toast.error('An error occurred while joining tribe');
       setJoining(false);
-      setJoined(true);
-      runConfetti();
-      setTimeout(() => (window.location.href = "/dashboard"), 900);
-    }, 1500);
+    }
   };
 
-  const handleFinish = () => {
-    runConfetti();
-    setTimeout(() => (window.location.href = "/dashboard"), 900);
+  const handleFinish = async () => {
+    try {
+      if (!session?.user?.id) {
+        toast.error('Please log in first');
+        return;
+      }
+
+      // Mark user as onboarded
+      const response = await fetch('/api/user/onboard', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: session.user.id }),
+      });
+
+      if (response.ok) {
+        runConfetti();
+        setTimeout(() => (window.location.href = "/predict"), 900);
+      } else {
+        toast.error('Failed to complete onboarding');
+      }
+    } catch (error) {
+      console.error('Error completing onboarding:', error);
+      toast.error('An error occurred during onboarding');
+    }
   };
 
   const steps = [
@@ -116,7 +188,7 @@ export default function OnboardingModal() {
       progress: "Step 3 of 3",
       description: createdCode
         ? "Share this code with friends!"
-        : "Join with a 6-digit code or create your own tribe.",
+        : "Join with a 6-character code or create your own tribe.",
       content: (
         <div className="flex flex-col gap-4">
           {/* JOIN TRIBE */}
@@ -125,9 +197,9 @@ export default function OnboardingModal() {
               <input
                 className="border rounded-md p-2 text-sm"
                 maxLength={6}
-                placeholder="Enter 6-digit code"
+                placeholder="Enter 6-character code"
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => setCode(e.target.value.replace(/[^a-fA-F0-9]/g, "").toLowerCase())}
               />
 
               <Button
